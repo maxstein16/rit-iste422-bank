@@ -201,9 +201,6 @@ public class CheckingAccountTestFixture {
                 testScenarios = tests;
                 runJunitTests();
             }
-            if (args.length > 1) {
-                System.out.println("File not found");
-            }
         }
             
         System.out.println("DONE");
