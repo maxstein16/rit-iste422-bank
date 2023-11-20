@@ -9,12 +9,15 @@ import org.junit.runner.notification.Failure;
 import static org.junit.Assert.*;
 import static org.hamcrest.CoreMatchers.*;
 
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Scanner;
 
 public class CheckingAccountTestFixture {
     public static Logger logger = LogManager.getLogger(CheckingAccountTestFixture.class);
@@ -26,7 +29,8 @@ public class CheckingAccountTestFixture {
                         List<Double> withdrawals,
                         List<Double> deposits,
                         boolean runMonthEnd,
-                        double endBalance
+                        double endBalance,
+                        double minimumBalance
     ) { }
 
     private static List<TestScenario> testScenarios;
@@ -78,6 +82,9 @@ public class CheckingAccountTestFixture {
 
             // make sure the balance is correct
             assertThat("Test #" + testNum + ":" + scenario, ca.getBalance(), is(scenario.endBalance));
+
+            // make sure the balance is above the minimum
+            assertTrue("Test #" + testNum + ": " + scenario, ca.getBalance() >= ca.getMinimumBalance());
         }
     }
 
@@ -115,9 +122,10 @@ public class CheckingAccountTestFixture {
         List<Double> checks = parseListOfAmounts(scenarioValues[1]);
         List<Double> wds = parseListOfAmounts(scenarioValues[2]);
         List<Double> deps = parseListOfAmounts(scenarioValues[3]);
-        double finalBalance = Double.parseDouble(scenarioValues[4]);
+        double finalBalance = Double.parseDouble(scenarioValues[4]);        
+        double minimumBalance = Double.parseDouble(scenarioValues[5]);
         TestScenario scenario = new TestScenario(
-                initialBalance, checks, wds, deps, false, finalBalance
+                initialBalance, checks, wds, deps, false, finalBalance, minimumBalance
         );
         return scenario;
     }
@@ -138,45 +146,66 @@ public class CheckingAccountTestFixture {
     public static void main(String [] args) throws IOException {
         System.out.println("START");
 
-        // We can:
-        // ... manually populate the list of scenarios we want to test...
-        System.out.println("\n\n****** FROM OBJECTS ******\n");
-        testScenarios = List.of(
-                new TestScenario(100, List.of(), List.of(), List.of(), false, 100),
-                new TestScenario(100, List.of(10d), List.of(), List.of(), false, 90),
-                new TestScenario(100, List.of(10.,20.), List.of(), List.of(10.), true, 80)
-                );
-        runJunitTests();
+        if (args.length == 0) {
+            // We can:
+            // ... manually populate the list of scenarios we want to test...
+            System.out.println("\n\n****** FROM OBJECTS ******\n");
+            testScenarios = List.of(
+                    new TestScenario(100, List.of(), List.of(), List.of(), false, 100, 0),
+                    new TestScenario(100, List.of(10d), List.of(), List.of(), false, 90, 0),
+                    new TestScenario(100, List.of(10.,20.), List.of(), List.of(10.), true, 80, 0)
+            );
+            runJunitTests();
 
-        // ...or create scenarios from a collection of strings...
-        // Format for each line: BALANCE,check_amt|check_amt|...,withdraw_amt|...,deposit_amt|...,end_balance
-        // note we left out runMonthEnd from our file format
+            // ...or create scenarios from a collection of strings...
+            // Format for each line: BALANCE,check_amt|check_amt|...,withdraw_amt|...,deposit_amt|...,end_balance
+            // note we left out runMonthEnd from our file format
 
-        // Same scenarios as above plus one more to verify it's running these string scenarios
-        System.out.println("\n\n****** FROM STRINGS ******\n");
-        List<String> scenarioStrings = List.of(
-                "0, , , 10|20, 30",
-                "100, , , , 100",
-                "100, 10, , , 90",
-                "100, 10|20, , 10, 80"
-        );
-        List<TestScenario> parsedScenarios = parseScenarioStrings(scenarioStrings);
-        testScenarios = parsedScenarios;
-        runJunitTests();
+            // Same scenarios as above plus one more to verify it's running these string scenarios
+            System.out.println("\n\n****** FROM STRINGS ******\n");
+            List<String> scenarioStrings = List.of(
+                    "0, , , 10|20, 30, 0",
+                    "100, , , , 100, 0",
+                    "100, 10, , , 90, 0",
+                    "100, 10|20, , 10, 80, 0"
+            );
+            List<TestScenario> parsedScenarios = parseScenarioStrings(scenarioStrings);
+            testScenarios = parsedScenarios;
+            runJunitTests();
+        }
 
-        // ...or populate with scenarios from a CSV file...
-        // now load these same scenarios from a file plus one more
-        System.out.println("\n\n****** FROM FILE ******\n");
-        // We could get the filename from the cmdline, e.g. "-f CheckingAccountScenarios.csv"
-        List<String> scenarioStringsFromFile = Files.readAllLines(Paths.get(TEST_FILE));
-        testScenarios = parseScenarioStrings(scenarioStringsFromFile);
-        runJunitTests();
+        else {
+            // ...or populate with scenarios from a CSV file...
+            // now load these same scenarios from a file plus one more
+            System.out.println("\n\n****** FROM FILE ******\n");
+            // We could get the filename from the cmdline, e.g. "-f CheckingAccountScenarios.csv"
+            List<String> scenarioStringsFromFile = Files.readAllLines(Paths.get(TEST_FILE));
+            testScenarios = parseScenarioStrings(scenarioStringsFromFile);
+            runJunitTests();
 
-        // ...or, we could also specify a single scenario on the command line,
-        // for example "-t '10, 20|20, , 40|10, 0'"
-        // Note the single-quotes because of the embedded spaces and the pipe symbol
-        System.out.println("Command-line arguments passed in: " + java.util.Arrays.asList(args));
-        
+            // ...or, we could also specify a single scenario on the command line,
+            // for example "-t '10, 20|20, , 40|10, 0'"
+            // Note the single-quotes because of the embedded spaces and the pipe symbol
+            System.out.println("Passed in: " + java.util.Arrays.asList(args));
+            if (args.length == 1) {
+                List<TestScenario> tests = new ArrayList<>();
+                try(Scanner scanner = new Scanner(new File(args[0]))){
+                    while (scanner.hasNextLine()) {
+                        String line = scanner.nextLine();
+                        tests.add(parseScenarioString(line));
+                    }
+                } 
+                catch (FileNotFoundException e) {
+                    System.out.println("Error: file " + args[0] + " not found");
+                }
+                testScenarios = tests;
+                runJunitTests();
+            }
+            if (args.length > 1) {
+                System.out.println("File not found");
+            }
+        }
+            
         System.out.println("DONE");
     }
 }

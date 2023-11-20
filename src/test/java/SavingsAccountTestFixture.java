@@ -6,12 +6,15 @@ import org.junit.runner.JUnitCore;
 import org.junit.runner.Result;
 import org.junit.runner.notification.Failure;
 
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Scanner;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
@@ -64,20 +67,29 @@ public class SavingsAccountTestFixture {
 
             // set up account with specified starting balance and interest rate
             // TODO: Add code to create account....
+            SavingsAccount sa = new SavingsAccount("test " + testNum, -1, scenario.initBalance, scenario.interestRate, -1);
 
             // now process withdrawals, deposits
-            // TODO: Add code to process withdrawals....
-
-            // TODO: Add code to process deposits
+            for (double withdrawalAmount : scenario.withdrawals) {
+                sa.withdraw(withdrawalAmount);
+            }
+            for (double depositAmount : scenario.deposits) {
+                sa.deposit(depositAmount);
+            }
 
             // run month-end if desired and output register
             if (scenario.runMonthEndNTimes > 0) {
-                // TODO: Add code to run month-end....
+                for (int i = 0; i < scenario.runMonthEndNTimes; i++) {
+                    sa.monthEnd();
+                }
+            }
+            for (RegisterEntry entry : sa.getRegisterEntries()) {
+                logger.info("Register Entry {} -- {}: {}", entry.id(), entry.entryName(), entry.amount());
             }
 
             // make sure the balance is correct
-            // TODO: add code to verify balance
-
+            double formattedBalance = Double.parseDouble(String.format("%.2f", sa.getBalance()));
+            assertThat("Test " + testNum + ":" + scenario, formattedBalance, is(scenario.endBalance));
         }
     }
 
@@ -111,12 +123,15 @@ public class SavingsAccountTestFixture {
     private static TestScenario parseScenarioString(String scenarioAsString) {
         String [] scenarioValues = scenarioAsString.split(",");
         // should probably validate length here
-        double initialBalance = Double.parseDouble(scenarioValues[0]);
-        // TODO: parse the rest of your fields
+        double initialBalance = Double.parseDouble(scenarioValues[0].trim());
+        double interestRate = Double.parseDouble(scenarioValues[1].trim());
         List<Double> wds = parseListOfAmounts(scenarioValues[2]);
-        // TODO: Replace these dummy values with _your_ field values to populate TestScenario object
+        List<Double> deps = parseListOfAmounts(scenarioValues[3]);
+        int runMonthEndNTimes = Integer.parseInt(scenarioValues[4].trim());
+        double finalBalance = Double.parseDouble(scenarioValues[5].trim());
+
         TestScenario scenario = new TestScenario(
-                initialBalance, 0.0, null, null, 0, 0.0
+            initialBalance, interestRate, wds, deps, runMonthEndNTimes, finalBalance
         );
         return scenario;
     }
@@ -137,30 +152,50 @@ public class SavingsAccountTestFixture {
     public static void main(String [] args) throws IOException {
         System.out.println("START TESTING");
 
-        // TODO: Instead of hardcoded "false", determine if tests are coming from file or cmdline
-        // Note: testsFromFile is just a suggestion, you don't have to use testsFromFile or even an if/then statement!
-        boolean testsFromFile = false;
-
-        // Note: this is just a suggestion, you don't have to use testsFromFile or even an if/then statement!
-        if (testsFromFile) {
+        if (args.length == 0) {
+            System.out.println("Invalid input");
+            System.exit(-1);
+        }
+        
+        // Read from file
+        if (args[0].equals("-f")) {
             // if populating with scenarios from a CSV file...
-            // TODO: We could get the filename from the cmdline, e.g. "-f CheckingAccountScenarios.csv"
             System.out.println("\n\n****** FROM FILE ******\n");
-            // TODO: get filename from cmdline and use instead of TEST_FILE constant
-            List<String> scenarioStringsFromFile = Files.readAllLines(Paths.get(TEST_FILE));
-            // Note: toArray converts from a List to an array
-            testScenarios = parseScenarioStrings(scenarioStringsFromFile);
+            List<TestScenario> tests = new ArrayList<>();
+            try(Scanner scanner = new Scanner(new File(args[1]))){
+                while (scanner.hasNextLine()) {
+                    String line = scanner.nextLine();
+                    tests.add(parseScenarioString(line));
+                }
+            } 
+            catch (FileNotFoundException e) {
+                System.out.println("Error: file " + args[1] + " not found");
+            }
+            testScenarios = tests;
             runJunitTests();
         }
-        else {
+
+        // Read from command line
+        else if (args[0].equals("-t")) {
             // if specifying a scenario on the command line,
             // for example "-t '10, 20|20, , 40|10, 0'"
             // Note the single-quotes above ^^^ because of the embedded spaces and the pipe symbol
-            System.out.println("Command-line arguments passed in: " + java.util.Arrays.asList(args));
-            // TODO: write the code to "parse" scenario into a suitable string
-            // TODO: get TestScenario object from above string and store to testScenarios static var
+            System.out.println("Passed in: " + java.util.Arrays.asList(args));
+            String s = args[0];
+            int i = s.indexOf("'");
+            int j = s.indexOf("'", i + 1);
+            String scenario = s.substring(i, j);
+            TestScenario ts = parseScenarioString(scenario);
+            testScenarios = new ArrayList<>();
+            testScenarios.add(ts);
             runJunitTests();
         }
+
+        // Invalid
+        else {
+            System.out.println("Invalid input");
+        }
+
         System.out.println("DONE");
     }
 }
